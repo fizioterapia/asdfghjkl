@@ -324,8 +324,7 @@ void DrawPenger(Penger* penger)
 
 bool BallInMouseRadius(Vector2 mouse, Ball* ball)
 {
-    return (ball->pos.x + ball->radius / 2 > mouse.x - MOUSE_RADIUS / 2 && ball->pos.x - ball->radius / 2 < mouse.x + MOUSE_RADIUS / 2
-        && ball->pos.y + ball->radius / 2 > mouse.y - MOUSE_RADIUS / 2 && ball->pos.y - ball->radius / 2 < mouse.y + MOUSE_RADIUS / 2);
+    return (IsCursorOnScreen() && (ball->pos.x + ball->radius / 2 > mouse.x - MOUSE_RADIUS / 2 && ball->pos.x - ball->radius / 2 < mouse.x + MOUSE_RADIUS / 2 && ball->pos.y + ball->radius / 2 > mouse.y - MOUSE_RADIUS / 2 && ball->pos.y - ball->radius / 2 < mouse.y + MOUSE_RADIUS / 2));
 }
 
 void PushBall(Vector2 mouse, Ball* ball)
@@ -349,6 +348,25 @@ void DrawMyBackground()
                 i + 1 >= GRID_COLS ? cellSize - 1 : cellSize, cellSize,
                 (Color) { 69, 69, 69, 255 });
         }
+    }
+}
+
+void DrawTitleText()
+{
+    int textWidth = MeasureText(TEXT, TEXT_SIZE);
+    double time = GetTime() * TEXT_SPEED * 2.0 * M_PI;
+
+    int textLength = strlen(TEXT);
+    int margin = 0;
+    float normalize = (1.0 / (float)textLength) * 2.0 * M_PI;
+
+    for (int i = 0; i < textLength; i++) {
+        char c[2];
+        c[0] = TEXT[i];
+        c[1] = '\0';
+        int cWidth = MeasureText(c, TEXT_SIZE);
+        DrawText(c, SCREEN_WIDTH / 2 - textWidth / 2 + margin + cos(time) * TEXT_ROTATE_X, SCREEN_HEIGHT / 2 - TEXT_SIZE / 2 + sin(time + (i * normalize)) * TEXT_ROTATE_Y / 3 + sin(time) * TEXT_ROTATE_Y, TEXT_SIZE, RAYWHITE);
+        margin += cWidth + (TEXT_SIZE / 10); // https://github.com/raysan5/raylib/blob/e00c5eb8b1068b1fb3c1c52fc00967749f2a990a/src/rtext.c#L1296C75-L1296C91
     }
 }
 
@@ -391,14 +409,14 @@ int main(void)
 
         if (IsKeyPressed(KEY_SPACE))
             ChangeSong(&music, true, false);
-        if (IsKeyPressed(KEY_D))
+        if (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT))
             ChangeSong(&music, false, true);
-        if (IsKeyPressed(KEY_A))
+        if (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT))
             ChangeSong(&music, false, false);
 
-        if (IsKeyDown(KEY_W))
+        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP))
             ChangeVolume(&music, true);
-        if (IsKeyDown(KEY_S))
+        if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN))
             ChangeVolume(&music, false);
 
         Vector2 mousePos = GetMousePosition();
@@ -418,17 +436,13 @@ int main(void)
             DrawBall(&balls[i]);
         }
 
-        int textWidth = MeasureText(TEXT, TEXT_SIZE);
-        double time = GetTime() * TEXT_SPEED * 2.0 * M_PI;
-        DrawText(TEXT, SCREEN_WIDTH / 2 - textWidth / 2 + cos(time) * TEXT_ROTATE_X,
-            SCREEN_HEIGHT / 2 - TEXT_SIZE / 2 + sin(time) * TEXT_ROTATE_Y,
-            TEXT_SIZE, RAYWHITE);
+        DrawTitleText();
 
         MovePenger(&penger);
         DrawPenger(&penger);
         DrawSong(&music);
 
-        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_S))
+        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_S) || IsKeyDown(KEY_UP) || IsKeyDown(KEY_DOWN))
             DrawVolumeBar();
 
         EndDrawing();
