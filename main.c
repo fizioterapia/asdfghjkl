@@ -16,6 +16,7 @@
 #define TEXT_SPEED 0.25
 
 #define PENGER_IMG "resources/penger.png"
+#define PENGER_SPEED 500
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
@@ -47,7 +48,8 @@ const char* tracks[] = { "resources/truck_is_jarig.xm",
     "resources/zabutom&dubmood-lite_l_sa_tankar_s.xm",
     "resources/ancient temple.mod",
     "resources/zalza-pr0ndisk_outro.xm",
-    "resources/zalza-tequila_groove.xm" };
+    "resources/zalza-tequila_groove.xm",
+    "resources/broken heart.xm" };
 
 typedef struct {
     Vector2 pos;
@@ -95,12 +97,18 @@ void DataGrabber(void* buffer, unsigned int frames)
 
         int i = 0;
         while (i < MUSIC_BAR_BANDS) {
+            float newValue = 0;
+
             for (int j = i * samples_per_band; j < (i + 1) * samples_per_band; j = j + md.channels) {
-                md.bands[i] += fabs((float)(samples[j] / 32768.0));
+                newValue += fabs((float)(samples[j] / 32768.0));
                 if (md.channels == 2)
-                    md.bands[i] += fabs((float)(samples[j + 1] / 32768.0));
+                    newValue += fabs((float)(samples[j + 1] / 32768.0));
             }
-            md.bands[i] = md.bands[i] / samples_per_band;
+
+            newValue = (newValue / samples_per_band);
+
+            md.bands[i] = Lerp(md.bands[i], newValue, 20.0 * GetFrameTime());
+
             i++;
         }
     } else if (md.size == 32) {
@@ -112,12 +120,17 @@ void DataGrabber(void* buffer, unsigned int frames)
 
         int i = 0;
         while (i < MUSIC_BAR_BANDS) {
+            float newValue = 0;
             for (int j = i * samples_per_band; j < (i + 1) * samples_per_band; j = j + md.channels) {
-                md.bands[i] += fabs(samples[j]);
+                newValue += fabs(samples[j]);
                 if (md.channels == 2)
-                    md.bands[i] += fabs(samples[j + 1]);
+                    newValue += fabs(samples[j + 1]);
             }
-            md.bands[i] = md.bands[i] / samples_per_band;
+
+            newValue = (newValue / samples_per_band);
+
+            md.bands[i] = Lerp(md.bands[i], newValue, 20.0 * GetFrameTime());
+
             i++;
         }
     } else {
@@ -194,7 +207,7 @@ void DrawVolumeBar()
     int x = SCREEN_WIDTH / 2 - VOLUME_WIDTH / 2;
     int y = SCREEN_HEIGHT / 2 - VOLUME_HEIGHT / 2;
 
-    int w = VOLUME_WIDTH * md.currentVolume;
+    int w = Lerp(0, VOLUME_WIDTH, md.currentVolume);
 
     DrawRectangle(x, y, VOLUME_WIDTH, VOLUME_HEIGHT, (Color) { 69, 69, 69, 255 });
     DrawRectangle(x + MARGIN / 2, y + MARGIN / 2, w - MARGIN, VOLUME_HEIGHT - MARGIN, (Color) { 69, 255, 69, 255 });
@@ -254,7 +267,7 @@ void DrawSong(Music* music)
     DrawRectangle(0, SCREEN_HEIGHT - BAR_HEIGHT, SCREEN_WIDTH, 32,
         (Color) { 69, 69, 69, 255 });
 
-    DrawRectangle(0, SCREEN_HEIGHT - BAR_HEIGHT, SCREEN_WIDTH * percentage,
+    DrawRectangle(0, SCREEN_HEIGHT - BAR_HEIGHT, Lerp(0, SCREEN_WIDTH, percentage),
         BAR_HEIGHT, (Color) { 69, 255, 69, 255 });
 
     int textLength = MeasureText(buf, BAR_TEXT_SIZE);
@@ -335,6 +348,9 @@ void PushBall(Vector2 mouse, Ball* ball)
     ball->pos.x += (BALL_PUSH * GetFrameTime()) * normalize.x;
     ball->pos.y += (BALL_PUSH * GetFrameTime()) * normalize.y;
 
+    ball->dir.x = fabs(ball->dir.x) * (normalize.x < 0 ? -1 : 1);
+    ball->dir.y = fabs(ball->dir.x) * (normalize.y < 0 ? -1 : 1);
+
     BallOutOfBounds(ball);
 }
 
@@ -399,7 +415,7 @@ int main(void)
 
     Penger penger = (Penger) { .texture = &penger_texture,
         .pos = (Vector2) { 0, SCREEN_HEIGHT - penger_texture.height - BAR_HEIGHT },
-        .speed = (Vector2) { 50, 0 },
+        .speed = (Vector2) { PENGER_SPEED, 0 },
         .flipped = false };
 
     while (!WindowShouldClose()) {
