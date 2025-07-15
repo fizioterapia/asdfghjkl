@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include "raymath.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -34,6 +35,9 @@
 #define VOLUME_TEXT_SIZE 16
 
 #define BUF_SIZE 255
+
+#define MOUSE_RADIUS 500
+#define BALL_PUSH 300
 
 const char* tracks[] = { "resources/truck_is_jarig.xm",
     "resources/cromenu#1 haschkaka.xm", "resources/lucid keygen #2.xm",
@@ -260,11 +264,8 @@ void DrawSong(Music* music)
         BAR_TEXT_SIZE, RAYWHITE);
 }
 
-void MoveBall(Ball* ball)
+void BallOutOfBounds(Ball* ball)
 {
-    ball->pos.x = ball->pos.x + (ball->dir.x * frameTime);
-    ball->pos.y = ball->pos.y + (ball->dir.y * frameTime);
-
     if (ball->pos.x > SCREEN_WIDTH - ball->radius) {
         ball->pos.x = SCREEN_WIDTH - ball->radius;
         ball->dir.x = -ball->dir.x;
@@ -280,6 +281,14 @@ void MoveBall(Ball* ball)
         ball->pos.y = ball->radius;
         ball->dir.y = -ball->dir.y;
     }
+}
+
+void MoveBall(Ball* ball)
+{
+    ball->pos.x = ball->pos.x + (ball->dir.x * frameTime);
+    ball->pos.y = ball->pos.y + (ball->dir.y * frameTime);
+
+    BallOutOfBounds(ball);
 }
 
 void DrawBall(Ball* ball)
@@ -311,6 +320,23 @@ void DrawPenger(Penger* penger)
     Rectangle dest = { penger->pos.x, penger->pos.y + (h - nh), w, nh };
 
     DrawTexturePro(*(penger->texture), source, dest, (Vector2) { 0, 0 }, 0, RAYWHITE);
+}
+
+bool BallInMouseRadius(Vector2 mouse, Ball* ball)
+{
+    return (ball->pos.x + ball->radius / 2 > mouse.x - MOUSE_RADIUS / 2 && ball->pos.x - ball->radius / 2 < mouse.x + MOUSE_RADIUS / 2
+        && ball->pos.y + ball->radius / 2 > mouse.y - MOUSE_RADIUS / 2 && ball->pos.y - ball->radius / 2 < mouse.y + MOUSE_RADIUS / 2);
+}
+
+void PushBall(Vector2 mouse, Ball* ball)
+{
+    Vector2 dist = Vector2Subtract(ball->pos, mouse);
+    Vector2 normalize = Vector2Normalize(dist);
+
+    ball->pos.x += (BALL_PUSH * GetFrameTime()) * normalize.x;
+    ball->pos.y += (BALL_PUSH * GetFrameTime()) * normalize.y;
+
+    BallOutOfBounds(ball);
 }
 
 void DrawMyBackground()
@@ -375,6 +401,8 @@ int main(void)
         if (IsKeyDown(KEY_S))
             ChangeVolume(&music, false);
 
+        Vector2 mousePos = GetMousePosition();
+
         BeginDrawing();
         ClearBackground((Color) { 24, 24, 24, 255 });
 
@@ -382,7 +410,11 @@ int main(void)
         DrawBars();
 
         for (int i = 0; i < sizeof(balls) / sizeof(Ball); i++) {
-            MoveBall(&balls[i]);
+            if (BallInMouseRadius(mousePos, &balls[i]))
+                PushBall(mousePos, &balls[i]);
+            else
+                MoveBall(&balls[i]);
+
             DrawBall(&balls[i]);
         }
 
