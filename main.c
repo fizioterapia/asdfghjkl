@@ -44,9 +44,24 @@
 
 #define POPUP_DURATION 1
 
+#define DECAY_SPEED 2500
+
 static unsigned int tracksLength = 0;
 char** tracks = NULL;
 static float popupDuration = 0;
+
+typedef struct {
+    Vector2 pos;
+    Vector2 dir;
+    int size;
+    Color col;
+    float decayRate;
+    float started;
+    float current;
+} Particle;
+
+// TODO: dynamic array
+static Particle particles[1024];
 
 typedef struct {
     Vector2 pos;
@@ -562,8 +577,50 @@ int main(void)
                 float seekPos = (mousePos.x / SCREEN_WIDTH) * GetMusicTimeLength(music);
 
                 StartSeeking(&music, seekPos);
+            } else {
+                for (int i = 0; i < 8; i++) {
+                    int m = 0;
+                    // TODO: dynamic array
+                    for (int j = 0; j < 1024; j++) {
+                        if (particles[j].started == 0 && particles[j].current == 0 && particles[j].decayRate == 0) {
+                            m = j;
+                            break;
+                        }
+                        m = m + 1;
+                        if (particles[j].started == particles[j].current)
+                            continue;
+
+                        // TODO: do a better function than this
+                        float alpha = 255 - particles[j].decayRate * (DECAY_SPEED * (particles[j].current - particles[j].started)) * GetFrameTime();
+
+                        if (alpha <= 0) {
+                            m = j;
+                            break;
+                        }
+                    }
+
+                    particles[m] = (Particle) {
+                        .pos = (Vector2) { mousePos.x, mousePos.y },
+                        .dir = (Vector2) { -250 + random() % 500, -250 + random() % 500 },
+                        .size = random() % 25 + 10,
+                        .col = (Color) {
+                            random() % 255,
+                            random() % 255,
+                            random() % 255,
+                            255 },
+                        .decayRate = 5,
+                        .started = GetTime(),
+                        .current = GetTime()
+                    };
+
+                    particles[m].pos.x = particles[m].pos.x - particles[m].size / 2;
+                    particles[m].pos.y = particles[m].pos.y - particles[m].size / 2;
+
+                    printf("[+] added particles[%d]\n", m);
+                }
             }
         }
+
         UpdateSeeking();
 
         BeginDrawing();
@@ -583,6 +640,44 @@ int main(void)
         }
 
         DrawTitleText();
+
+        // TODO: dynamic array
+        for (int i = 0; i < 1024; i++) {
+            if (particles[i].started == 0 && particles[i].current == 0 && particles[i].decayRate == 0)
+                continue;
+
+            float alpha = 255 - particles[i].decayRate * (DECAY_SPEED * (particles[i].current - particles[i].started)) * GetFrameTime();
+
+            if (alpha < 0)
+                continue;
+            particles[i].current = GetTime();
+            particles[i].pos.x = particles[i].pos.x + (particles[i].dir.x * GetFrameTime());
+            particles[i].pos.y = particles[i].pos.y + (particles[i].dir.y * GetFrameTime());
+
+            if (particles[i].pos.x < 0) {
+                particles[i].pos.x = 0;
+                particles[i].dir.x = fabs(particles[i].dir.x);
+            }
+
+            if (particles[i].pos.x + particles[i].size > SCREEN_WIDTH) {
+                particles[i].pos.x = SCREEN_WIDTH - particles[i].size;
+                particles[i].dir.x = -fabs(particles[i].dir.x);
+            }
+
+            if (particles[i].pos.y < 0) {
+                particles[i].pos.y = 0;
+                particles[i].dir.y = fabs(particles[i].dir.y);
+            }
+
+            if (particles[i].pos.y + particles[i].size > SCREEN_HEIGHT - BAR_HEIGHT) {
+                particles[i].pos.y = SCREEN_HEIGHT - BAR_HEIGHT - particles[i].size;
+                particles[i].dir.y = -fabs(particles[i].dir.y);
+            }
+
+            particles[i].col.a = alpha;
+
+            DrawRectangle(particles[i].pos.x, particles[i].pos.y, particles[i].size, particles[i].size, particles[i].col);
+        }
 
         MovePenger(&penger);
         DrawPenger(&penger);
