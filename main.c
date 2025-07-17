@@ -1,18 +1,20 @@
 #include "raylib.h"
 #include "raymath.h"
+#include <dirent.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define MARGIN 16
 
 #define TEXT "asdfghjkl"
 #define TEXT_SIZE 69
-#define TEXT_ROTATE_X SCREEN_WIDTH / 8
-#define TEXT_ROTATE_Y SCREEN_HEIGHT / 8
+#define TEXT_ROTATE_X SCREEN_WIDTH / 6
+#define TEXT_ROTATE_Y SCREEN_HEIGHT / 4
 #define TEXT_SPEED 0.25
 
 #define PENGER_IMG "resources/penger.png"
@@ -40,16 +42,11 @@
 #define MOUSE_RADIUS 500
 #define BALL_PUSH 300
 
-const char* tracks[] = { "resources/truck_is_jarig.xm",
-    "resources/cromenu#1 haschkaka.xm", "resources/lucid keygen #2.xm",
-    "resources/reloaded.xm", "resources/starchip.xm",
-    "resources/tomorrow land.xm",
-    "resources/tuber theme #19.xm", "resources/ulfs vibrator.xm",
-    "resources/zabutom&dubmood-lite_l_sa_tankar_s.xm",
-    "resources/ancient temple.mod",
-    "resources/zalza-pr0ndisk_outro.xm",
-    "resources/zalza-tequila_groove.xm",
-    "resources/broken heart.xm" };
+#define POPUP_DURATION 1
+
+static unsigned int tracksLength = 0;
+char** tracks = NULL;
+static float popupDuration = 0;
 
 typedef struct {
     Vector2 pos;
@@ -79,7 +76,6 @@ static MusicData md = {};
 
 Ball balls[34 + 35] = {};
 bool musicLoaded = false;
-struct timeval tv = {};
 
 static float frameTime = 0;
 
@@ -107,7 +103,7 @@ void DataGrabber(void* buffer, unsigned int frames)
 
             newValue = (newValue / samples_per_band);
 
-            md.bands[i] = Lerp(md.bands[i], newValue, 20.0 * GetFrameTime());
+            md.bands[i] = Lerp(md.bands[i], newValue, 20.0 * frameTime);
 
             i++;
         }
@@ -129,12 +125,12 @@ void DataGrabber(void* buffer, unsigned int frames)
 
             newValue = (newValue / samples_per_band);
 
-            md.bands[i] = Lerp(md.bands[i], newValue, 20.0 * GetFrameTime());
+            md.bands[i] = Lerp(md.bands[i], newValue, 20.0 * frameTime);
 
             i++;
         }
     } else {
-        printf("[-] unsupported md.size: %u\n", md.size);
+        fprintf(stderr, "[-] unsupported md.size: %u\n", md.size);
     }
 
     return;
@@ -142,29 +138,98 @@ void DataGrabber(void* buffer, unsigned int frames)
 
 char* trimTitle(const char* title)
 {
-    char* newTitle;
+    if (title == NULL)
+        return NULL;
+
     int startIndex = 0;
+    int len = strlen(title);
 
-    int len = 0;
-
-    while (title[len] != '\0' && title[len] != '.') {
-        if (title[len] == '/' && startIndex == 0)
-            startIndex = len + 1;
-        ++len;
+    for (int i = 0; i < len; i++) {
+        if (title[i] == '/' && i + 1 < len) {
+            startIndex = i + 1;
+        }
+        if (title[i] == '.') {
+            len = i;
+            break;
+        }
     }
 
     len -= startIndex;
+    if (len <= 0)
+        return NULL;
 
-    newTitle = malloc(sizeof(char) * len);
+    char* newTitle = malloc(len + 1);
+    if (newTitle == NULL)
+        return NULL;
 
-    memcpy(newTitle, title + (startIndex * sizeof(char)), len);
-    memset(newTitle + (len * sizeof(char)), 0, 1);
+    strncpy(newTitle, title + startIndex, len);
+    newTitle[len] = '\0';
 
     return newTitle;
 }
 
+/*
+    Seeking is not supported in module formats
+    https://github.com/raysan5/raudio/blob/711c86eae17db9a94af575f7a5b496244b48b22d/src/raudio.c#L1791C5-L1791C50
+*/
+typedef struct {
+    bool seeking;
+    float progress;
+    float targetTime;
+    float startTime;
+    Music* music;
+} SeekingState;
+
+static SeekingState seekState = { 0 };
+
+void StartSeeking(Music* music, float targetTime)
+{
+    seekState.seeking = true;
+    seekState.targetTime = targetTime;
+    seekState.startTime = GetMusicTimePlayed(*music);
+    seekState.music = music;
+
+    if (targetTime < GetMusicTimePlayed(*music)) {
+        StopMusicStream(*music);
+        PlayMusicStream(*music);
+
+        seekState.startTime = 0;
+    }
+
+    SetMusicPitch(*music, 50.0);
+    SetMasterVolume(0.0f);
+    UpdateMusicStream(*music);
+}
+
+void UpdateSeeking()
+{
+    if (seekState.seeking) {
+        seekState.progress = GetMusicTimePlayed(*(seekState.music)) / seekState.targetTime;
+        SetMasterVolume(0.0f);
+
+	if (seekState.targetTime > 0) {
+            seekState.progress = GetMusicTimePlayed(*(seekState.music)) / seekState.targetTime;
+        } else {
+            seekState.progress = 1.0;
+        }
+
+        if (seekState.progress >= 1.0) {
+            seekState.seeking = false;
+
+            SetMusicPitch(*(seekState.music), 1.0);
+            SetMasterVolume(md.currentVolume);
+        }
+    }
+}
+
 void ChangeSong(Music* music, bool rand, bool inc)
 {
+    if (seekState.seeking) {
+	seekState.seeking = false;
+	SetMusicPitch(*music, 1.0);
+	SetMasterVolume(md.currentVolume);
+    }
+
     if (musicLoaded) {
         UnloadMusicStream(*music);
         musicLoaded = false;
@@ -173,12 +238,12 @@ void ChangeSong(Music* music, bool rand, bool inc)
     srand((int)(GetTime() * 1000));
 
     if (rand)
-        md.currentTrack = random() % sizeof(tracks) / sizeof(tracks[0]);
+        md.currentTrack = random() % tracksLength;
     else {
         if (inc)
-            md.currentTrack = (md.currentTrack + 1 == (sizeof(tracks) / sizeof(tracks[0]))) ? 0 : md.currentTrack + 1;
+            md.currentTrack = (md.currentTrack + 1 == tracksLength) ? 0 : md.currentTrack + 1;
         else
-            md.currentTrack = md.currentTrack == 0 ? (sizeof(tracks) / sizeof(tracks[0])) - 1 : md.currentTrack - 1;
+            md.currentTrack = md.currentTrack == 0 ? tracksLength - 1 : md.currentTrack - 1;
     }
 
     const char* track = (const char*)tracks[md.currentTrack];
@@ -188,7 +253,7 @@ void ChangeSong(Music* music, bool rand, bool inc)
     musicLoaded = true;
 
     music->looping = true;
-    SetMusicVolume(*music, md.currentVolume);
+    SetMasterVolume(md.currentVolume);
 
     AttachAudioStreamProcessor(music->stream, DataGrabber);
 
@@ -204,6 +269,11 @@ void ChangeSong(Music* music, bool rand, bool inc)
 
 void DrawVolumeBar()
 {
+    if (popupDuration <= 0)
+        return;
+
+    popupDuration -= frameTime;
+
     int x = SCREEN_WIDTH / 2 - VOLUME_WIDTH / 2;
     int y = SCREEN_HEIGHT / 2 - VOLUME_HEIGHT / 2;
 
@@ -220,16 +290,18 @@ void DrawVolumeBar()
 
 void ChangeVolume(Music* music, bool inc)
 {
+    popupDuration = POPUP_DURATION;
+
     if (inc) {
-        md.currentVolume += VOLUME_STEP * GetFrameTime();
+        md.currentVolume += VOLUME_STEP * frameTime;
         if (md.currentVolume > 1)
             md.currentVolume = 1;
-        SetMusicVolume(*music, md.currentVolume);
+        SetMasterVolume(md.currentVolume);
     } else {
-        md.currentVolume -= VOLUME_STEP * GetFrameTime();
+        md.currentVolume -= VOLUME_STEP * frameTime;
         if (md.currentVolume < 0)
             md.currentVolume = 0;
-        SetMusicVolume(*music, md.currentVolume);
+        SetMasterVolume(md.currentVolume);
     }
 }
 
@@ -247,21 +319,21 @@ void DrawBars()
 
 void DrawSong(Music* music)
 {
-    int elapsedSeconds = GetMusicTimePlayed(*music);
-    int seconds = GetMusicTimeLength(*music);
+    float elapsedSeconds = GetMusicTimePlayed(*music);
+    float seconds = GetMusicTimeLength(*music);
 
-    elapsedSeconds = elapsedSeconds % seconds;
+    elapsedSeconds = fmod(elapsedSeconds, seconds);
 
     float percentage = ((float)elapsedSeconds / (float)seconds);
 
     int elapsedMinutes = elapsedSeconds / 60;
-    elapsedSeconds = elapsedSeconds % 60;
+    elapsedSeconds = fmod(elapsedSeconds, 60);
 
     int minutes = seconds / 60;
-    seconds = seconds % 60;
+    seconds = fmod(seconds, 60);
 
     char buf[BUF_SIZE];
-    snprintf(buf, BUF_SIZE, "%s - %02d:%02d / %02d:%02d", md.title, elapsedMinutes, elapsedSeconds, minutes,
+    snprintf(buf, BUF_SIZE, "%s - %02d:%02.0f / %02d:%02.0f", md.title, elapsedMinutes, elapsedSeconds, minutes,
         seconds);
 
     DrawRectangle(0, SCREEN_HEIGHT - BAR_HEIGHT, SCREEN_WIDTH, 32,
@@ -345,8 +417,8 @@ void PushBall(Vector2 mouse, Ball* ball)
     Vector2 dist = Vector2Subtract(ball->pos, mouse);
     Vector2 normalize = Vector2Normalize(dist);
 
-    ball->pos.x += (BALL_PUSH * GetFrameTime()) * normalize.x;
-    ball->pos.y += (BALL_PUSH * GetFrameTime()) * normalize.y;
+    ball->pos.x += (BALL_PUSH * frameTime) * normalize.x;
+    ball->pos.y += (BALL_PUSH * frameTime) * normalize.y;
 
     ball->dir.x = fabs(ball->dir.x) * (normalize.x < 0 ? -1 : 1);
     ball->dir.y = fabs(ball->dir.x) * (normalize.y < 0 ? -1 : 1);
@@ -381,15 +453,62 @@ void DrawTitleText()
         c[0] = TEXT[i];
         c[1] = '\0';
         int cWidth = MeasureText(c, TEXT_SIZE);
-        DrawText(c, SCREEN_WIDTH / 2 - textWidth / 2 + margin + cos(time) * TEXT_ROTATE_X, SCREEN_HEIGHT / 2 - TEXT_SIZE / 2 + sin(time + (i * normalize)) * TEXT_ROTATE_Y / 3 + sin(time) * TEXT_ROTATE_Y, TEXT_SIZE, RAYWHITE);
+        DrawText(c, SCREEN_WIDTH / 2 - textWidth / 2 + margin + cos(time) * TEXT_ROTATE_X, SCREEN_HEIGHT / 2 - TEXT_SIZE / 2 + sin(time + (i * normalize)) * TEXT_SIZE + sin(time) * TEXT_ROTATE_Y, TEXT_SIZE, RAYWHITE);
         margin += cWidth + (TEXT_SIZE / 10); // https://github.com/raysan5/raylib/blob/e00c5eb8b1068b1fb3c1c52fc00967749f2a990a/src/rtext.c#L1296C75-L1296C91
     }
 }
 
+bool CheckSuffix(const char* fileName, const char* suffix)
+{
+    return (strncmp(fileName + strlen(fileName) - sizeof(char) * strlen(suffix), suffix, strlen(suffix)) == 0);
+}
+
+void SearchForTracks()
+{
+    printf("[+] searching for tracks\n");
+
+    const char* resourcesDir = "resources/";
+    DIR* resources = opendir(resourcesDir);
+
+    if (resources == NULL) {
+        fprintf(stderr, "[-] Cannot open resources directory\n");
+        return;
+    }
+
+    struct dirent* entity;
+    while ((entity = readdir(resources)) != NULL) {
+        if (CheckSuffix(entity->d_name, "xm") || CheckSuffix(entity->d_name, "mod") || CheckSuffix(entity->d_name, "XM") || CheckSuffix(entity->d_name, "MOD")) {
+
+            tracks = realloc(tracks, (tracksLength + 1) * sizeof(char*));
+            if (tracks == NULL) {
+                fprintf(stderr, "[-] Memory allocation failed for tracks array\n");
+                closedir(resources);
+                return;
+            }
+
+            size_t pathLen = strlen(resourcesDir) + strlen(entity->d_name) + 1;
+            tracks[tracksLength] = malloc(pathLen);
+            if (tracks[tracksLength] == NULL) {
+                fprintf(stderr, "[-] Memory allocation failed for track path\n");
+                closedir(resources);
+                return;
+            }
+
+            snprintf(tracks[tracksLength], pathLen, "%s%s", resourcesDir, entity->d_name);
+
+            printf("[+] added track: %s (count: %u)\n", tracks[tracksLength], tracksLength + 1);
+            tracksLength++;
+        }
+    }
+
+    closedir(resources);
+}
+
 int main(void)
 {
-    gettimeofday(&tv, NULL);
-    srand(tv.tv_sec);
+    SearchForTracks();
+
+    srand(GetTime());
 
     for (int i = 0; i < sizeof(balls) / sizeof(Ball); i++) {
         balls[i] = (Ball) { .pos
@@ -406,6 +525,7 @@ int main(void)
     Music music;
     md.currentVolume = 0.1;
     ChangeSong(&music, true, false);
+    SetMasterVolume(md.currentVolume);
 
     SetTargetFPS(TARGET_FPS);
 
@@ -437,11 +557,22 @@ int main(void)
 
         Vector2 mousePos = GetMousePosition();
 
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (mousePos.y <= SCREEN_HEIGHT && mousePos.y >= SCREEN_HEIGHT - BAR_HEIGHT) {
+                float seekPos = (mousePos.x / SCREEN_WIDTH) * GetMusicTimeLength(music);
+
+                StartSeeking(&music, seekPos);
+            }
+        }
+        UpdateSeeking();
+
         BeginDrawing();
         ClearBackground((Color) { 24, 24, 24, 255 });
 
         DrawMyBackground();
-        DrawBars();
+
+	if (!(seekState.seeking))
+            DrawBars();
 
         for (int i = 0; i < sizeof(balls) / sizeof(Ball); i++) {
             if (BallInMouseRadius(mousePos, &balls[i]))
@@ -458,8 +589,7 @@ int main(void)
         DrawPenger(&penger);
         DrawSong(&music);
 
-        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_S) || IsKeyDown(KEY_UP) || IsKeyDown(KEY_DOWN))
-            DrawVolumeBar();
+        DrawVolumeBar();
 
         EndDrawing();
     }
