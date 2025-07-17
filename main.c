@@ -207,7 +207,7 @@ void UpdateSeeking()
         seekState.progress = GetMusicTimePlayed(*(seekState.music)) / seekState.targetTime;
         SetMasterVolume(0.0f);
 
-	if (seekState.targetTime > 0) {
+        if (seekState.targetTime > 0) {
             seekState.progress = GetMusicTimePlayed(*(seekState.music)) / seekState.targetTime;
         } else {
             seekState.progress = 1.0;
@@ -225,9 +225,9 @@ void UpdateSeeking()
 void ChangeSong(Music* music, bool rand, bool inc)
 {
     if (seekState.seeking) {
-	seekState.seeking = false;
-	SetMusicPitch(*music, 1.0);
-	SetMasterVolume(md.currentVolume);
+        seekState.seeking = false;
+        SetMusicPitch(*music, 1.0);
+        SetMasterVolume(md.currentVolume);
     }
 
     if (musicLoaded) {
@@ -310,10 +310,10 @@ void DrawBars()
     for (int i = 0; i < MUSIC_BAR_BANDS; i++) {
         int x = SCREEN_WIDTH / MUSIC_BAR_BANDS * i;
         int w = SCREEN_WIDTH / MUSIC_BAR_BANDS;
-        int h = (SCREEN_HEIGHT - BAR_HEIGHT) * md.bands[i];
+        int h = (SCREEN_HEIGHT - BAR_HEIGHT) * (seekState.seeking ? 0.3 + (0.5 / (float)(random() % 8)) : md.bands[i]);
         int y = (SCREEN_HEIGHT - BAR_HEIGHT) - h;
 
-        DrawRectangle(x, y, w, h, (Color) { 245, 169, 184, 100 });
+        DrawRectangle(x, y, w, h, (Color) { (seekState.seeking) ? random() % 255 : 245, (seekState.seeking) ? random() % 255 : 169, (seekState.seeking) ? random() % 255 : 184, 100 });
     }
 }
 
@@ -571,8 +571,7 @@ int main(void)
 
         DrawMyBackground();
 
-	if (!(seekState.seeking))
-            DrawBars();
+        DrawBars();
 
         for (int i = 0; i < sizeof(balls) / sizeof(Ball); i++) {
             if (BallInMouseRadius(mousePos, &balls[i]))
